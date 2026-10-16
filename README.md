@@ -1,6 +1,15 @@
 # SurfaceGuard
 
-Attack-surface monitoring SaaS for small businesses and MSPs.
+Attack-surface monitoring SaaS for small businesses and MSPs: see your business the way attackers do.
+
+![SurfaceGuard landing page](docs/screenshots/landing.png)
+
+Enter a domain and SurfaceGuard checks SSL/TLS, email-spoofing protection (SPF/DMARC/DKIM), HTTP security
+headers and public subdomains (including takeover risks), then grades it A–F with a plain-English fix for every
+issue. After the owner verifies the domain via DNS, it also checks for exposed files (`.env`, `.git`, backups)
+and risky open ports. Rescans run automatically and alert on anything new.
+
+![Free scan result](docs/screenshots/scan-result.png)
 
 | Folder | What it is |
 |---|---|
