@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "_macros.html" import grade_badge, counts_row, findings_list %}
+{% block title %}{{ d.name }} — SurfaceGuard{% endblock %}
+{% block bodyattrs %}{% if running %}data-poll="/api/domains/{{ d.id }}/status"{% endif %}{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <p class="crumb"><a href="/dashboard">← All domains</a></p>
+  {% if paused %}<div class="flash flash-warn">Monitoring for this domain is paused because it's over your plan's domain limit.
+    <a href="/pricing">Upgrade</a> to resume automatic scans.</div>{% endif %}
+
+  <div class="result-head card">
+    {% if r %}{{ grade_badge(r.grade, r.score, "grade-lg") }}{% else %}<div class="grade grade-lg grade-pending"><span class="spinner dark"></span></div>{% endif %}
+    <div class="grow">
+      <h1>{{ d.name }}
+        {% if d.verified_at %}<span class="tag tag-ok">verified owner</span>{% else %}<span class="tag">unverified</span>{% endif %}
+      </h1>
+      {% if r %}{{ counts_row(r.counts) }}
+        <p class="muted small">Last completed scan {{ r.started_at[:16]|replace('T', ' ') }} UTC · {{ r.duration_s }}s</p>
+      {% endif %}
+      {% if last and last.status == 'failed' and not running %}<p class="form-error small">Latest scan failed: {{ last.error }}</p>{% endif %}
+    </div>
+    <div class="actions">
+      <form method="post" action="/domains/{{ d.id }}/scan"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn" {{ 'disabled' if running or paused }}>{% if running %}<span class="spinner"></span> Scanning…{% else %}Rescan now{% endif %}</button></form>
+      {% if r %}<a class="btn btn-ghost" href="/domains/{{ d.id }}/report" target="_blank">Client report</a>{% endif %}
+      <form method="post" action="/domains/{{ d.id }}/alerts"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn btn-ghost">Alerts: {{ 'on' if d.alerts else 'off' }}</button></form>
+    </div>
+  </div>
+
+  {% if running %}<div class="flash flash-info"><span class="spinner dark"></span> Scan in progress — this page refreshes automatically.</div>{% endif %}
+  {% if r and r.incomplete %}<div class="flash flash-warn">Some checks couldn't complete this time ({{ r.incomplete|join(', ') }} — usually a slow server or timeout).
+    Results from the previous scan are shown for those categories. They'll be retried automatically.</div>{% endif %}
+
+  {% if not d.verified_at %}
+  <div class="card verify">
+    <h3>Verify ownership to unlock deep checks</h3>
+    <p>Exposed-file and open-port checks actively probe your server, so we only run them on domains you prove you own.
+      Add this <strong>TXT record</strong> at your DNS provider for <code>{{ d.name }}</code>:</p>
+    <div class="copy-row"><code id="vrec">{{ verify_record }}</code><button class="btn btn-ghost btn-sm" type="button" data-copy="#vrec">Copy</button></div>
+    <form method="post" action="/domains/{{ d.id }}/verify"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn">I've added it — verify</button></form>
+  </div>
+  {% endif %}
+
+  {% if r %}
+  <div class="two-col">
+    <section>
+      <h2>Issues ({{ r.findings|selectattr('severity', 'ne', 'info')|list|length }})</h2>
+      {{ findings_list(r.findings, open_first=True) }}
+    </section>
+
+    <aside class="side">
+      {% set tls = r.facts.tls or {} %}
+      <div class="card">
+        <h3>SSL certificate</h3>
+        {% if tls.expires %}
+          <dl><dt>Issuer</dt><dd>{{ tls.issuer }}</dd><dt>Expires</dt><dd>{{ tls.expires }} ({{ tls.days_left }} days)</dd><dt>Protocol</dt><dd>{{ tls.protocol }}</dd></dl>
+        {% else %}<p class="muted small">{{ tls.error or 'Not checked' }}</p>{% endif %}
+      </div>
+
+      {% set em = r.facts.email or {} %}
+      <div class="card">
+        <h3>Email security</h3>
+        <dl>
+          <dt>SPF</dt><dd>{% if em.spf %}<code class="wrapcode">{{ em.spf }}</code>{% else %}<span class="bad">missing</span>{% endif %}</dd>
+          <dt>DMARC</dt><dd>{% if em.dmarc %}<code class="wrapcode">{{ em.dmarc }}</code>{% else %}<span class="bad">missing</span>{% endif %}</dd>
+          {% if em.dkim_selectors is defined %}<dt>DKIM</dt><dd>{{ em.dkim_selectors|join(', ') or 'not found' }}</dd>{% endif %}
+        </dl>
+      </div>
+
+      {% if r.facts.ports %}
+      <div class="card">
+        <h3>Risky ports</h3>
+        <p class="small">{{ r.facts.ports.checked|length }} checked on {{ r.facts.ports.ip }} ·
+          {% if r.facts.ports.open %}<span class="bad">open: {{ r.facts.ports.open|join(', ') }}</span>{% else %}<span class="good">none open</span>{% endif %}</p>
+      </div>
+      {% endif %}
+
+      {% set subs = (r.facts.subdomains or {}).subdomains or [] %}
+      <div class="card">
+        <h3>Subdomains ({{ subs|length }})</h3>
+        {% if subs %}
+        <ul class="sublist">
+          {% for s in subs %}<li><span class="dot {{ 'dot-live' if s.live else '' }} {{ 'dot-bad' if s.dangling }}"></span>{{ s.name }}</li>{% endfor %}
+        </ul>
+        {% else %}<p class="muted small">{{ (r.facts.subdomains or {}).error or 'None found in public certificate logs.' }}</p>{% endif %}
+      </div>
+
+      {% set done = history|selectattr('status', 'eq', 'done')|list %}
+      {% if done|length > 1 %}
+      {% set pts = done[:20]|reverse|list %}
+      <div class="card">
+        <h3>Score trend</h3>
+        <svg viewBox="0 0 240 60" class="spark" preserveAspectRatio="none">
+          <polyline fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"
+            points="{% for s in pts %}{{ (loop.index0 * 240 / (pts|length - 1))|round(1) }},{{ (56 - s.score * 0.52)|round(1) }} {% endfor %}"/>
+        </svg>
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <h3>Scan history</h3>
+        <table class="history">
+          {% for s in history[:10] %}
+          <tr><td>{{ s.started_at[:16]|replace('T', ' ') }}</td>
+              <td>{% if s.status == 'done' %}<strong>{{ s.grade }}</strong> {{ s.score }}{% if s.new_issues %} <span class="pill sev-high">+{{ s.new_issues }} new</span>{% endif %}{% else %}{{ s.status }}{% endif %}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    </aside>
+  </div>
+  {% elif not running %}
+  <div class="card empty"><p class="muted">No completed scans yet.</p></div>
+  {% endif %}
+
+  <form method="post" action="/domains/{{ d.id }}/delete" class="remove-form"
+        data-confirm="Remove {{ d.name }} and all its scan history?">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><button class="linklike danger small">Remove this domain</button></form>
+</div>
+{% endblock %}

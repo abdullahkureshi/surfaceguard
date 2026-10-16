@@ -1,0 +1,36 @@
+{% macro grade_badge(grade, score, size="") %}
+  <div class="grade grade-{{ grade|lower }} {{ size }}" title="Score {{ score }}/100">
+    <span class="grade-letter">{{ grade }}</span><span class="grade-score">{{ score }}</span>
+  </div>
+{% endmacro %}
+
+{% macro counts_row(c) %}
+  <div class="counts">
+    {% for sev in ["critical", "high", "medium", "low"] %}
+      <span class="pill sev-{{ sev }} {{ 'zero' if not c[sev] }}">{{ c[sev] }} {{ sev }}</span>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro findings_list(findings, limit=None, open_first=False) %}
+  <div class="findings">
+  {% for f in findings %}
+    {% if limit is none or loop.index <= limit %}
+    <details class="finding sev-border-{{ f.severity }}" {{ 'open' if open_first and loop.first }}>
+      <summary>
+        <span class="pill sev-{{ f.severity }}">{{ f.severity }}</span>
+        <span class="finding-title">{{ f.title }}{% if f.carried %} <span class="tag" title="This check timed out; showing the previous result">previous scan</span>{% endif %}</span>
+        <span class="finding-cat">{{ f.check }}</span>
+      </summary>
+      <div class="finding-body">
+        <p>{{ f.detail|md }}</p>
+        {% if f.evidence %}<p class="evidence"><strong>Evidence:</strong> <code>{{ f.evidence }}</code></p>{% endif %}
+        <div class="fix"><strong>How to fix</strong><p>{{ f.fix|md }}</p></div>
+      </div>
+    </details>
+    {% endif %}
+  {% else %}
+    <p class="muted">No issues found. Nice work!</p>
+  {% endfor %}
+  </div>
+{% endmacro %}

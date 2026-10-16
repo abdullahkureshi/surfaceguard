@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Pricing — SurfaceGuard{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <div class="center">
+    <h1>Simple pricing</h1>
+    <p class="muted">Start free. Upgrade when you need more domains or daily monitoring.</p>
+  </div>
+  {% set features = {
+    'free': ['1 domain', 'Weekly automatic scan', 'All passive checks', 'Deep checks after verification', 'Email alerts'],
+    'pro':  ['10 domains', 'Daily automatic scans', 'Everything in Free', 'Printable client reports', 'Priority support'],
+    'msp':  ['100 domains', 'Daily automatic scans', 'Everything in Pro', 'Multi-client dashboard', 'White-label reports (soon)'] } %}
+  <div class="plans">
+    {% for key, p in PLANS.items() %}
+    <div class="card plan {{ 'plan-featured' if key == 'pro' }}">
+      {% if key == 'pro' %}<span class="tag tag-ok">most popular</span>{% endif %}
+      <h2>{{ p.name }}</h2>
+      <p class="price">€{{ p.price }}<span>/month</span></p>
+      <ul>{% for f in features[key] %}<li>{{ f }}</li>{% endfor %}</ul>
+      {% set mode = billing_mode() %}
+      {% if not user %}<a class="btn" href="/register">Get started</a>
+      {% elif user.plan == key %}<button class="btn btn-ghost" disabled>Current plan</button>
+      {% elif mode == 'demo' %}
+        <form method="post" action="/billing/plan"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="plan" value="{{ key }}">
+          <button class="btn">Switch to {{ p.name }}</button></form>
+      {% elif mode == 'stripe' and user.stripe_subscription_id %}
+        {# Existing subscribers change or cancel their plan in the Stripe customer portal #}
+        <form method="post" action="/billing/portal"><input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn {{ 'btn-ghost' if key == 'free' }}">{{ 'Cancel subscription' if key == 'free' else 'Switch to ' ~ p.name }}</button></form>
+      {% elif mode == 'stripe' and key != 'free' %}
+        <form method="post" action="/billing/checkout" data-loading="Opening checkout…"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="plan" value="{{ key }}">
+          <button class="btn">Upgrade to {{ p.name }}</button></form>
+      {% elif key != 'free' %}<button class="btn btn-ghost" disabled>Coming soon</button>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if billing_mode() == 'demo' %}<p class="center muted small">Demo mode: switching plans doesn't charge anything (no Stripe keys configured).</p>
+  {% else %}<p class="center muted small">Prices exclude VAT. Cancel anytime. Secure payment by Stripe.</p>{% endif %}
+</div>
+{% endblock %}

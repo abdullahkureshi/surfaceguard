@@ -1,0 +1,37 @@
+# Fly.io config. `app` must be globally unique: change it (and BASE_URL) before `fly launch`.
+app = "myproduct-eu"
+primary_region = "fra"          # Frankfurt — EU data residency
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENVIRONMENT = "production"
+  BASE_URL = "https://myproduct-eu.fly.dev"   # change to your custom domain later
+  DATA_DIR = "/data"
+  PORT = "8080"
+  CLIENT_IP_HEADER = "Fly-Client-IP"          # real visitor IP for the free-check rate limit
+  # Secrets (SESSION_SECRET, STRIPE_*, SMTP_*) are set with `fly secrets set`, never here.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Keep one machine always on: the automatic rescan scheduler runs inside the app.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[mounts]]
+  source = "myproduct_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

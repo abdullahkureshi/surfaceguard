@@ -1,0 +1,9 @@
+.venv
+**/__pycache__
+*.db
+*.db-*
+.secret_key
+.env
+tests
+dev_test_account.txt
+.claude

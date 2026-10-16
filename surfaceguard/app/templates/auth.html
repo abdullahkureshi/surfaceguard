@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Create account' if mode == 'register' else 'Log in' }} — SurfaceGuard{% endblock %}
+{% block content %}
+<div class="wrap narrow page">
+  <div class="card">
+    <h1>{{ 'Create your free account' if mode == 'register' else 'Welcome back' }}</h1>
+    {% if mode == 'register' and domain %}<p class="muted">We'll start monitoring <strong>{{ domain }}</strong> right away.</p>{% endif %}
+    {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+    <form method="post" action="/{{ mode }}" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if mode == 'register' %}<input type="hidden" name="domain" value="{{ domain or '' }}">{% endif %}
+      <label>Work email <input type="email" name="email" value="{{ email or '' }}" required autocomplete="email"></label>
+      <label>Password <input type="password" name="password" required minlength="{{ 10 if mode == 'register' else 1 }}"
+        autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}"></label>
+      {% if mode == 'register' %}<p class="muted small">At least 10 characters.</p>{% endif %}
+      <button class="btn btn-lg">{{ 'Create account' if mode == 'register' else 'Log in' }}</button>
+    </form>
+    <p class="muted small switch">
+      {% if mode == 'register' %}Already have an account? <a href="/login">Log in</a>
+      {% else %}New here? <a href="/register">Create a free account</a>{% endif %}
+    </p>
+  </div>
+</div>
+{% endblock %}

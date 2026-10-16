@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_macros.html" import grade_badge, counts_row, findings_list %}
+{% block title %}{{ r.domain }} security check — SurfaceGuard{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <div class="result-head card">
+    {{ grade_badge(r.grade, r.score, "grade-lg") }}
+    <div>
+      <p class="eyebrow">Free security check</p>
+      <h1>{{ r.domain }}</h1>
+      {{ counts_row(r.counts) }}
+      <p class="muted small">Scanned in {{ r.duration_s }}s · passive checks only</p>
+    </div>
+  </div>
+
+  <h2>Top issues</h2>
+  {{ findings_list(r.findings, limit=5, open_first=True) }}
+
+  <div class="cta card">
+    <div>
+      <h3>Keep {{ r.domain }} protected</h3>
+      <p>Get the full report, unlock deep checks (exposed files &amp; open ports), and receive an alert
+        whenever something changes. Free for one domain.</p>
+    </div>
+    <a class="btn btn-lg" href="/register?domain={{ r.domain|urlencode }}">Monitor this domain free</a>
+  </div>
+</div>
+{% endblock %}

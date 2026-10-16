@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import grade_badge, counts_row %}
+{% block title %}Dashboard — SurfaceGuard{% endblock %}
+{% block bodyattrs %}{% if domains|selectattr('grade', 'none')|rejectattr('paused')|list %}data-reload-after="5000"{% endif %}{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <div class="page-head">
+    <div>
+      <h1>Your domains</h1>
+      <p class="muted">{{ plan.name }} plan · {{ domains|length }} / {{ plan.domains }} domains ·
+        rescans every {{ 'day' if plan.interval_hours == 24 else 'week' }} ·
+        {% if user.stripe_customer_id and billing_mode() == 'stripe' %}
+          <form method="post" action="/billing/portal" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="linklike link">manage billing</button></form>
+        {% else %}<a href="/pricing">change plan</a>{% endif %}</p>
+    </div>
+    <form method="post" action="/domains" class="add-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="domain" placeholder="add a domain, e.g. client.com" required>
+      <button class="btn">Add &amp; scan</button>
+    </form>
+  </div>
+
+  {% if user.subscription_status == 'past_due' %}
+  <div class="flash flash-error">Your last payment failed. Please update your card to keep your plan —
+    <form method="post" action="/billing/portal" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="linklike link">update payment method</button></form>.</div>
+  {% endif %}
+  {% if paused_count %}
+  <div class="flash flash-warn">{{ paused_count }} domain(s) are paused because your plan includes {{ plan.domains }}.
+    Their history is kept. <a href="/pricing">Upgrade</a> or remove domains to resume monitoring.</div>
+  {% endif %}
+
+  {% if domains %}
+  <div class="domain-grid">
+    {% for d in domains %}
+    <a class="card domain-card {{ 'is-paused' if d.paused }}" href="/domains/{{ d.id }}">
+      {% if d.grade %}{{ grade_badge(d.grade, d.score) }}{% elif d.paused %}<div class="grade grade-pending"></div>{% else %}<div class="grade grade-pending"><span class="spinner dark"></span></div>{% endif %}
+      <div class="domain-card-body">
+        <h3>{{ d.name }}
+          {% if d.paused %}<span class="tag">paused</span>{% elif d.verified_at %}<span class="tag tag-ok">verified</span>{% else %}<span class="tag">unverified</span>{% endif %}
+        </h3>
+        {% if d.counts %}{{ counts_row(d.counts) }}{% elif d.scan_status == 'failed' %}<p class="form-error small">Last scan failed</p>{% elif not d.paused %}<p class="muted small">First scan running…</p>{% endif %}
+        <p class="muted small">Last scan: {{ d.last_scan_at[:16]|replace('T', ' ') if d.last_scan_at else 'never' }} UTC</p>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card empty">
+    <h3>No domains yet</h3>
+    <p class="muted">Add your company's main domain above. The first scan starts immediately.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

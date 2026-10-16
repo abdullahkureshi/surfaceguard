@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block bodyclass %}landing{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="wrap hero-inner">
+    <p class="eyebrow">Attack surface monitoring for small businesses &amp; MSPs</p>
+    <h1>See your business the way hackers do.</h1>
+    <p class="lead">SurfaceGuard continuously checks your domain for expired certificates, email spoofing risks,
+      exposed files, open databases and forgotten subdomains — and tells you exactly how to fix each one, in plain English.</p>
+    <form method="post" action="/check" class="check-form" data-loading="Scanning…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="domain" placeholder="yourcompany.com" value="{{ domain or '' }}" required autocomplete="off" aria-label="Domain">
+      <button class="btn btn-lg">Run free check</button>
+    </form>
+    {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+    <p class="hint">Free, no signup. Takes about 10–30 seconds. Passive checks only.</p>
+  </div>
+</section>
+
+<section class="wrap features">
+  <div class="feature"><div class="ficon">🔒</div><h3>SSL &amp; HTTPS</h3><p>Certificate expiry, invalid certs, outdated TLS, missing HTTPS redirects and HSTS.</p></div>
+  <div class="feature"><div class="ficon">✉️</div><h3>Email spoofing</h3><p>SPF, DMARC and DKIM checks — the #1 way attackers impersonate your company.</p></div>
+  <div class="feature"><div class="ficon">🌐</div><h3>Subdomains</h3><p>Discovers forgotten subdomains from public certificate logs and flags takeover risks.</p></div>
+  <div class="feature"><div class="ficon">📂</div><h3>Exposed files</h3><p>Leaked <code>.env</code> files, <code>.git</code> folders, database dumps and backups.</p></div>
+  <div class="feature"><div class="ficon">🚪</div><h3>Open ports</h3><p>Databases, RDP, Redis and other services that should never face the internet.</p></div>
+  <div class="feature"><div class="ficon">🔔</div><h3>Change alerts</h3><p>Automatic rescans and an email the moment something new appears.</p></div>
+</section>
+
+<section class="wrap msp">
+  <div>
+    <h2>Built for MSPs and IT consultants</h2>
+    <p>Monitor all your clients' domains from one dashboard and hand them a clean, printable security report.
+      Cyber-insurers increasingly ask for exactly this.</p>
+  </div>
+  <a class="btn btn-lg" href="/pricing">See plans</a>
+</section>
+{% endblock %}

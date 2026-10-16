@@ -1,0 +1,23 @@
+{
+  "skill_name": "saas-builder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "im a physiotherapist in graz and i know some python. give me saas ideas i could actually sell, not generic stuff",
+      "expected_output": "6-10 ideas in the skill's format (problem/product/who pays/price/why now/your edge), leaning on the physio + Austria/DACH edge, a comparison table, one recommendation, and a question asking which to build. No code yet.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I have a small FastAPI app called Remindly (invoice payment reminders, SQLite, users table already). Add Stripe subscriptions: Free, Pro €19/mo and Agency €79/mo, with a customer portal and webhooks.",
+      "expected_output": "billing.py/config.py copied from assets, db billing columns + helpers + migration, billing routes + webhook, plan keys consistent with env vars, offline tests with mocked Stripe that pass.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "my app works on my laptop now. how do i put it on the internet so people can pay? ive never deployed anything",
+      "expected_output": "Starts the guided walkthrough: checks permanent folder, warns never to paste sk_/whsec_ in chat, gives only the first 1-2 steps with exact clicks/commands, asks the user to report back. Does not dump the whole guide at once.",
+      "files": []
+    }
+  ]
+}

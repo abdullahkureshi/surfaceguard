@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SurfaceGuard — Attack surface monitoring for small businesses{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z' fill='%234f46e5'/></svg>">
+</head>
+<body class="{% block bodyclass %}{% endblock %}" {% block bodyattrs %}{% endblock %}>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="logo" href="{{ '/dashboard' if user else '/' }}">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z" fill="currentColor"/><path d="m11 16 3.5 3.5L21 13" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      SurfaceGuard
+    </a>
+    <nav>
+      <a href="/pricing">Pricing</a>
+      {% if user %}
+        <a href="/dashboard">Dashboard</a>
+        <form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="linklike">Log out</button></form>
+      {% else %}
+        <a href="/login">Log in</a>
+        <a class="btn btn-sm" href="/register">Start free</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+{% if flash %}<div class="wrap"><div class="flash flash-{{ flash.kind }}">{{ flash.msg }}</div></div>{% endif %}
+<main>{% block content %}{% endblock %}</main>
+<footer class="footer"><div class="wrap">© SurfaceGuard · Only scan domains you own or are authorized to test.</div></footer>
+<script src="/static/app.js?v={{ asset_version }}" defer></script>
+</body>
+</html>
