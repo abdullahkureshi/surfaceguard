@@ -17,6 +17,7 @@ from . import config, db
 log = logging.getLogger("surfaceguard.billing")
 API = "https://api.stripe.com/v1"
 ACTIVE_STATUSES = {"active", "trialing", "past_due"}  # past_due = grace period while Stripe retries
+TERMINAL_STATUSES = {"canceled", "incomplete_expired"}  # Stripe never moves a subscription out of these
 
 
 class BillingError(Exception):
@@ -42,11 +43,19 @@ async def stripe_request(method, path, data=None, idempotency_key=None):
     headers = {"Authorization": f"Bearer {config.STRIPE_SECRET_KEY}", "Stripe-Version": "2024-06-20"}
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.request(method, API + path, data=_flatten(data) if data else None, headers=headers)
-    body = r.json()
-    if r.status_code >= 400:
-        msg = body.get("error", {}).get("message", r.text)
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.request(method, API + path, data=_flatten(data) if data else None, headers=headers)
+    except httpx.HTTPError as e:
+        log.error("Stripe %s %s failed: %s", method, path, type(e).__name__)
+        raise BillingError("Could not reach Stripe") from e
+    try:
+        body = r.json()
+    except ValueError:
+        body = None
+    if r.status_code >= 400 or not isinstance(body, dict):
+        err = body.get("error") if isinstance(body, dict) else None
+        msg = (err.get("message") if isinstance(err, dict) else None) or f"HTTP {r.status_code} from Stripe"
         log.error("Stripe %s %s failed: %s", method, path, msg)
         raise BillingError(msg)
     return body
@@ -125,8 +134,23 @@ def verify_signature(payload: bytes, header: str, secret: str, tolerance=300):
     return json.loads(payload)
 
 
-def apply_subscription(sub):
-    """Set the user's plan from a Stripe subscription object."""
+def apply_subscription(sub, event_created=None):
+    """Set the user's plan from a Stripe subscription object.
+
+    event_created is the webhook event's `created` timestamp. Events older than the newest one already
+    applied to this subscription are ignored (Stripe doesn't guarantee order and retries for days), and a
+    canceled subscription is never brought back to life.
+    """
+    known = db.get_stripe_subscription(sub["id"])
+    status = sub["status"]
+    if known:
+        if event_created is not None and known["last_event_created"] and event_created < known["last_event_created"]:
+            log.info("ignoring stale event for subscription %s (%s < %s)", sub["id"], event_created,
+                     known["last_event_created"])
+            return
+        if known["status"] in TERMINAL_STATUSES and status not in TERMINAL_STATUSES:
+            log.info("ignoring %s for subscription %s: it is already %s", status, sub["id"], known["status"])
+            return
     user = db.get_user_by_customer(sub["customer"])
     if not user:
         uid = (sub.get("metadata") or {}).get("user_id")
@@ -137,12 +161,12 @@ def apply_subscription(sub):
         db.set_billing(user["id"], customer_id=sub["customer"])
     items = (sub.get("items") or {}).get("data") or []
     plan = plan_for_price(items[0]["price"]["id"]) if items else None
-    status = sub["status"]
     if status in ACTIVE_STATUSES and plan:
         db.set_billing(user["id"], plan=plan, subscription_id=sub["id"], status=status)
     elif user["stripe_subscription_id"] in (None, sub["id"]):
         # Only downgrade if this is the user's current subscription (not an old, replaced one).
         db.set_billing(user["id"], plan="free", subscription_id=None, status=status)
+    db.save_stripe_subscription(sub["id"], user["id"], status, event_created)
     log.info("subscription %s (%s): user %s is now on plan %s", sub["id"], status, user["id"],
              db.get_user(user["id"])["plan"])
 
@@ -150,10 +174,22 @@ def apply_subscription(sub):
 def handle_event(event):
     if not db.record_stripe_event(event["id"], event["type"]):
         return "duplicate"
+    try:
+        _dispatch(event)
+    except Exception:
+        # Un-record the event so Stripe's retry (it gets a 500 from us) is processed, not dropped as a duplicate.
+        log.exception("webhook %s (%s) failed; it will be processed on Stripe's retry", event["id"], event["type"])
+        db.forget_stripe_event(event["id"])
+        raise
+    return "ok"
+
+
+def _dispatch(event):
     obj = event["data"]["object"]
     t = event["type"]
+    created = event.get("created")
     if t in ("customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"):
-        apply_subscription(obj)
+        apply_subscription(obj, int(created) if created is not None else None)
     elif t == "checkout.session.completed":
         uid = obj.get("client_reference_id")
         if uid and str(uid).isdigit() and obj.get("customer"):
@@ -161,4 +197,3 @@ def handle_event(event):
         # The plan itself is set by customer.subscription.created, which Stripe sends as well.
     elif t == "invoice.payment_failed":
         log.warning("payment failed for customer %s", obj.get("customer"))
-    return "ok"

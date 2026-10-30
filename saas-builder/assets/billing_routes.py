@@ -60,7 +60,7 @@ def client_ip(request):
 
 @app.post("/billing/plan")
 def change_plan(request: Request, plan: str = Form(...), csrf: str = Form("")):
-    """Demo plan switch for local development only (no Stripe keys configured)."""
+    """Demo plan switch for local development only (DEMO_BILLING=1, no Stripe keys, not production)."""
     require_csrf(request, csrf)
     user = require_user(request)
     if config.billing_mode() != "demo":
@@ -78,10 +78,10 @@ async def billing_checkout(request: Request, plan: str = Form(...), csrf: str = 
     user = require_user(request)
     if config.billing_mode() != "stripe":
         raise HTTPException(404)
-    if user["subscription_status"] in billing.ACTIVE_STATUSES:
-        # Already subscribed: plan changes and cancellation happen in the Stripe customer portal.
-        return redirect(await billing.create_portal(user))
     try:
+        if user["subscription_status"] in billing.ACTIVE_STATUSES:
+            # Already subscribed: plan changes and cancellation happen in the Stripe customer portal.
+            return redirect(await billing.create_portal(user))
         return redirect(await billing.create_checkout(user, plan))
     except billing.BillingError:
         flash(request, "We couldn't start checkout. Please try again in a minute.", "error")

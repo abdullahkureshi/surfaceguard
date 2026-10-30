@@ -30,8 +30,9 @@ Dashboard "manage billing" ──POST /billing/portal──► Stripe Customer P
 
 - **Webhooks are the source of truth.** The success-page sync is just for instant UX.
 - **Billing modes** (`config.billing_mode()`): `stripe` when the secret key and all price IDs are set; `demo`
-  (free plan switching, for local development) otherwise; `disabled` in production without keys. The demo route
-  returns 404 unless in demo mode.
+  (free plan switching, for local development) only when there are no keys, `DEMO_BILLING=1` is set and the app is
+  not in production; `disabled` otherwise. Demo mode is opt-in so a deployment that forgets
+  `ENVIRONMENT=production` cannot hand out paid plans. The demo route returns 404 unless in demo mode.
 - **Existing subscribers never get a second Checkout**; send them to the portal for any change.
 - `customer` is created once per user (idempotency key `customer-<user_id>`) and stored.
 - Checkout session: `mode=subscription`, `client_reference_id=user_id`, metadata `user_id`/`plan` on both the
@@ -41,7 +42,10 @@ Dashboard "manage billing" ──POST /billing/portal──► Stripe Customer P
 ## DB columns (added via migration)
 
 `users.stripe_customer_id` (unique index), `users.stripe_subscription_id`, `users.subscription_status`, and a
-`stripe_events(id PRIMARY KEY, type, received_at)` table for de-duplication.
+`stripe_events(id PRIMARY KEY, type, received_at)` table for de-duplication, and a
+`stripe_subscriptions(id PRIMARY KEY, user_id, status, last_event_created)` table holding the last known state of
+each subscription. Turn on SQLite WAL mode and a busy timeout (see the note at the top of `assets/db_billing.py`):
+webhooks and background jobs write at the same time.
 
 ## Webhook handling
 
@@ -50,7 +54,16 @@ Verify the signature yourself: header `Stripe-Signature: t=<ts>,v1=<sig>[,v1=...
 timestamp is more than 300 s off. Use the **raw** request body (`await request.body()`), not parsed JSON. Return
 400 on a bad signature, and 200 for everything else (including events you ignore), otherwise Stripe retries.
 
-Record `event.id` first; if it's already recorded, return `duplicate` (Stripe retries deliveries).
+Record `event.id` first; if it's already recorded, return `duplicate` (Stripe retries deliveries). If handling
+then raises, delete the record again (`forget_stripe_event`) and re-raise, so the endpoint returns 500 and Stripe's
+retry is processed instead of being dropped as a duplicate.
+
+Stripe does not guarantee event order. `apply_subscription` ignores an event whose `created` is older than the
+newest one already applied to that subscription, and never moves a `canceled` or `incomplete_expired`
+subscription back to active (this also covers the success-page sync, which has no event timestamp).
+
+`stripe_request` turns network errors, non-JSON and non-object responses into `BillingError`; routes catch it
+(including the portal call inside `/billing/checkout`) and show a friendly message.
 
 | Event | Action |
 |---|---|

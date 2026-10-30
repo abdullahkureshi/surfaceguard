@@ -21,7 +21,16 @@ def severity_counts(findings):
 
 
 def diff_findings(old, new):
-    """Findings present in `new` but not in `old` (used for alerts)."""
-    key = lambda f: (f["check"], f["title"])
-    seen = {key(f) for f in old}
-    return [f for f in new if key(f) not in seen and f["severity"] != "info"]
+    """Findings present in `new` but not in `old` (used for alerts).
+
+    Findings match on their stable `id` (titles may contain changing numbers, such as days
+    until certificate expiry). Results stored before ids existed have no `id`, so a finding
+    also counts as already seen when an old one has the same (check, title)."""
+    seen_ids = {f["id"] for f in old if f.get("id")}
+    seen_titles = {(f["check"], f["title"]) for f in old}
+
+    def is_new(f):
+        if f.get("id") and f["id"] in seen_ids:
+            return False
+        return (f["check"], f["title"]) not in seen_titles
+    return [f for f in new if f["severity"] != "info" and is_new(f)]
