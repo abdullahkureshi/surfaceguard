@@ -16,13 +16,16 @@ CLIENT_IP_HEADER = env("CLIENT_IP_HEADER").lower()
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET")
 STRIPE_PRICES = {"pro": env("STRIPE_PRICE_PRO"), "msp": env("STRIPE_PRICE_MSP")}
+# Free plan switching for local development. Must be turned on explicitly, so a deployment that
+# forgets ENVIRONMENT=production can't hand out paid plans; it is ignored in production.
+DEMO_BILLING = env("DEMO_BILLING") == "1"
 
 
 def billing_mode():
-    """'stripe' when keys are configured; 'demo' (free plan switching) only outside production."""
+    """'stripe' when keys are configured; 'demo' (free plan switching) only with DEMO_BILLING=1 outside production."""
     if STRIPE_SECRET_KEY and all(STRIPE_PRICES.values()):
         return "stripe"
-    return "disabled" if IS_PRODUCTION else "demo"
+    return "demo" if DEMO_BILLING and not IS_PRODUCTION else "disabled"
 
 
 def check_production():

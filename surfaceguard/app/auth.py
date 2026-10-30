@@ -4,8 +4,9 @@ import hmac
 import os
 import re
 import secrets
+from functools import lru_cache
 
-ITERATIONS = 310_000
+ITERATIONS = 600_000  # OWASP 2023 guidance for PBKDF2-HMAC-SHA256
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -22,6 +23,25 @@ def verify_password(password: str, stored: str) -> bool:
         return False
     test = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(iters))
     return hmac.compare_digest(test.hex(), digest)
+
+
+def needs_rehash(stored: str) -> bool:
+    """True when the stored hash uses fewer iterations than today's setting (rehash it on the next login)."""
+    try:
+        return int(stored.split("$")[1]) < ITERATIONS
+    except (IndexError, ValueError):
+        return False
+
+
+@lru_cache(maxsize=1)
+def _dummy_hash() -> str:
+    return hash_password(secrets.token_hex(16))
+
+
+def verify_dummy(password: str) -> bool:
+    """Spend the same time as a real check when the user doesn't exist, so timing doesn't reveal accounts."""
+    verify_password(password, _dummy_hash())
+    return False
 
 
 def secret_key() -> str:
@@ -44,4 +64,5 @@ def csrf_token(session) -> str:
 
 
 def check_csrf(session, token) -> bool:
-    return bool(token) and hmac.compare_digest(session.get("csrf", ""), token)
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
+    return bool(token) and hmac.compare_digest(str(session.get("csrf", "")).encode(), str(token).encode())

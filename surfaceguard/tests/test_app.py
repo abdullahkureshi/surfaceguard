@@ -8,6 +8,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ["SURFACEGUARD_DB"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["DISABLE_SCHEDULER"] = "1"
+os.environ["DEMO_BILLING"] = "1"  # the flow below upgrades through the demo plan switch
 
 from fastapi.testclient import TestClient  # noqa: E402
 

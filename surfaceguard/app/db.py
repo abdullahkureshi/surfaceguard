@@ -3,16 +3,17 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import config
 
 DB_PATH = os.environ.get("SURFACEGUARD_DB", os.path.join(config.DATA_DIR, "surfaceguard.db"))
 
+# scans_per_hour: user-started scans (add domain, rescan, verify) per rolling hour. Scheduled scans don't count.
 PLANS = {
-    "free": {"name": "Free", "price": 0, "domains": 1, "interval_hours": 24 * 7},
-    "pro": {"name": "Pro", "price": 29, "domains": 10, "interval_hours": 24},
-    "msp": {"name": "MSP", "price": 149, "domains": 100, "interval_hours": 24},
+    "free": {"name": "Free", "price": 0, "domains": 1, "interval_hours": 24 * 7, "scans_per_hour": 5},
+    "pro": {"name": "Pro", "price": 29, "domains": 10, "interval_hours": 24, "scans_per_hour": 30},
+    "msp": {"name": "MSP", "price": 149, "domains": 100, "interval_hours": 24, "scans_per_hour": 150},
 }
 
 SCHEMA = """
@@ -29,6 +30,12 @@ CREATE TABLE IF NOT EXISTS scans (
     result_json TEXT, error TEXT, new_issues INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_scans_domain ON scans(domain_id, id DESC);
 CREATE TABLE IF NOT EXISTS stripe_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, received_at TEXT NOT NULL);
+-- Last known state of each Stripe subscription, to ignore stale or out-of-order webhook events.
+CREATE TABLE IF NOT EXISTS stripe_subscriptions (
+    id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, status TEXT NOT NULL, last_event_created INTEGER);
+-- User-started scan launches. Kept apart from `scans` so deleting a domain doesn't reset the budget.
+CREATE TABLE IF NOT EXISTS scan_launches (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, launched_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_scan_launches_user ON scan_launches(user_id, launched_at);
 """
 
 # Columns added after the first release; applied to existing databases on startup.
@@ -46,6 +53,8 @@ def conn():
     c = sqlite3.connect(DB_PATH, timeout=10)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
+    c.execute("PRAGMA busy_timeout = 10000")
+    c.execute("PRAGMA synchronous = NORMAL")  # safe with WAL, far fewer fsyncs
     try:
         yield c
         c.commit()
@@ -55,6 +64,8 @@ def conn():
 
 def init():
     with conn() as c:
+        # WAL lets readers and the single writer work at the same time (fewer "database is locked" errors).
+        c.execute("PRAGMA journal_mode = WAL")
         c.executescript(SCHEMA)
         for table, cols in MIGRATIONS.items():
             existing = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
@@ -82,6 +93,11 @@ def get_user_by_email(email):
 def get_user(user_id):
     with conn() as c:
         return c.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+
+
+def set_password_hash(user_id, pw_hash):
+    with conn() as c:
+        c.execute("UPDATE users SET pw_hash=? WHERE id=?", (pw_hash, user_id))
 
 
 def set_plan(user_id, plan):
@@ -115,6 +131,26 @@ def record_stripe_event(event_id, event_type):
         return True
     except sqlite3.IntegrityError:
         return False
+
+
+def forget_stripe_event(event_id):
+    """Undo record_stripe_event when handling failed, so Stripe's retry is processed instead of skipped."""
+    with conn() as c:
+        c.execute("DELETE FROM stripe_events WHERE id=?", (event_id,))
+
+
+def get_stripe_subscription(sub_id):
+    with conn() as c:
+        return c.execute("SELECT * FROM stripe_subscriptions WHERE id=?", (sub_id,)).fetchone()
+
+
+def save_stripe_subscription(sub_id, user_id, status, event_created=None):
+    """Remember a subscription's latest status and the newest event timestamp seen for it."""
+    with conn() as c:
+        c.execute("""INSERT INTO stripe_subscriptions(id, user_id, status, last_event_created) VALUES (?,?,?,?)
+                     ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id, status=excluded.status,
+                       last_event_created=MAX(COALESCE(last_event_created, 0), COALESCE(excluded.last_event_created, 0))""",
+                  (sub_id, user_id, status, event_created))
 
 
 # ---- domains
@@ -152,6 +188,11 @@ def mark_verified(domain_id):
         c.execute("UPDATE domains SET verified_at=? WHERE id=?", (now(), domain_id))
 
 
+def clear_verified(domain_id):
+    with conn() as c:
+        c.execute("UPDATE domains SET verified_at=NULL WHERE id=?", (domain_id,))
+
+
 def set_alerts(domain_id, user_id, on):
     with conn() as c:
         c.execute("UPDATE domains SET alerts=? WHERE id=? AND user_id=?", (1 if on else 0, domain_id, user_id))
@@ -170,8 +211,8 @@ def domains_due_for_scan():
         rows = c.execute("""SELECT * FROM (
                                 SELECT d.*, u.plan, u.email,
                                        ROW_NUMBER() OVER (PARTITION BY d.user_id ORDER BY d.id) AS rank
-                                FROM domains d JOIN users u ON u.id=d.user_id)
-                            WHERE NOT EXISTS (SELECT 1 FROM scans s WHERE s.domain_id=id AND s.status='running')""").fetchall()
+                                FROM domains d JOIN users u ON u.id=d.user_id) AS x
+                            WHERE NOT EXISTS (SELECT 1 FROM scans s WHERE s.domain_id=x.id AND s.status='running')""").fetchall()
     due = []
     for r in rows:
         if r["rank"] > PLANS[r["plan"]]["domains"]:
@@ -186,6 +227,20 @@ def domains_due_for_scan():
 
 
 # ---- scans
+
+def record_scan_launch(user_id):
+    with conn() as c:
+        c.execute("INSERT INTO scan_launches(user_id, launched_at) VALUES (?,?)", (user_id, now()))
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
+        c.execute("DELETE FROM scan_launches WHERE launched_at < ?", (cutoff,))
+
+
+def scan_launches_since(user_id, hours=1):
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    with conn() as c:
+        return c.execute("SELECT COUNT(*) FROM scan_launches WHERE user_id=? AND launched_at >= ?",
+                         (user_id, cutoff)).fetchone()[0]
+
 
 def start_scan(domain_id):
     with conn() as c:

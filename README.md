@@ -25,5 +25,6 @@ python -m venv .venv
 .venv\Scripts\python -m uvicorn app.main:app --port 8000
 ```
 
-Secrets (Stripe keys, session secret, SMTP) are never committed. Locally the app runs without them in demo
-billing mode; in production they are set with `fly secrets set`.
+Secrets (Stripe keys, session secret, SMTP) are never committed. Locally the app runs without them (set
+`DEMO_BILLING=1` for free plan switching while developing); in production they are set with `fly secrets set`,
+and demo billing is never available there.

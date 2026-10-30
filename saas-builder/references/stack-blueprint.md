@@ -55,7 +55,7 @@ python -m venv .venv
 
 ## 4. Accounts, sessions, CSRF
 
-Copy `assets/auth.py`: PBKDF2-SHA256 (stdlib, 310k iterations, per-user salt, constant-time compare), session
+Copy `assets/auth.py`: PBKDF2-SHA256 (stdlib, 600k iterations, per-user salt, constant-time compare), session
 secret from `SESSION_SECRET` or a generated file in `DATA_DIR`, per-session CSRF token checked on every POST.
 Starlette `SessionMiddleware` with `same_site="lax"` and `https_only` when `BASE_URL` is https.
 - Normalise emails to lowercase; minimum password length 10.
@@ -83,7 +83,9 @@ def launch_job(row):
   last run is older than the owner's plan interval, skipping paused items and ones already running. Allow
   `DISABLE_SCHEDULER=1` for tests.
 - Change alerts: diff the new result against the previous one; email only *new* problems. Without SMTP settings,
-  log the alert instead so development works without email.
+  log the alert instead so development works without email; in production log only "alert suppressed for user id
+  N" (no address or findings in logs) and warn at startup. Send through `asyncio.to_thread`, and verify the SMTP
+  certificate (`ssl.create_default_context()` for STARTTLS on 587, `SMTP_SSL` on 465).
 - Carry forward: if a category of the job failed this run, copy that category's previous results into the new
   result with a `carried: true` flag, recompute the score, and show a notice in the UI.
 

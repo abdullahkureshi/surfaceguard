@@ -70,7 +70,7 @@ credentials in a dev file in the project, not in chat.
 Read `references/stripe.md` and adapt `assets/billing.py` + `assets/config.py`. Key decisions already made:
 Stripe Checkout (hosted) for new subscriptions, Customer Portal for changes/cancellation, signed webhooks as the
 source of truth with event de-duplication, immediate sync on the success page, a demo billing mode for local
-development that is disabled in production, and paused (not deleted) resources when a user downgrades.
+development (opt-in with `DEMO_BILLING=1`, never available in production), and paused (not deleted) resources when a user downgrades.
 
 ## Phase 6 — Production hardening + deploy config
 
